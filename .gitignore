@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -216,3 +217,34 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+=======
+# 현장 전용 / 용량 큰 산출물 — README의 "저장소에 없는 파일 3개" 참고
+# (.gitignore는 줄 끝 주석을 지원하지 않으므로 주석은 항상 따로 쓸 것)
+
+# YOLO 가중치 (best.pt 21MB)
+*.pt
+# homography.npy — 웹캠을 움직이면 무효라 공유 의미 없음
+*.npy
+# SLAM 맵 (my_map.yaml, map_save.yaml 등 이름이 다양해서 *map* 로 잡는다.
+# 다른 설정 yaml은 파일명에 map만 안 들어가면 그대로 커밋된다.)
+*.pgm
+*map*.yaml
+
+# colcon
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# 에디터 / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Note.md
+>>>>>>> 77e72ed (mini_project_v1)
