@@ -8,7 +8,7 @@ colcon build를 해야 하고 빼먹으면 에러 없이 옛 좌표를 계속 �
 """
 from pathlib import Path
 
-PKG = Path('/home/rokey/turtlebot4_ws/src/mini_turtle4')
+PKG = Path('/home/rokey/turtlebot4_ws/src/mini_turtle4/mini_turtle4')
 RESOURCE = PKG / 'resource'
 
 H_FILE = str(RESOURCE / 'homography.npy')       # 호모그래피 행렬
