@@ -16,8 +16,9 @@ from launch.actions import (DeclareLaunchArgument, ExecuteProcess,
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 
+from mini_turtle4.paths import MAP_YAML
+
 NAMESPACE = '/robot4'
-MAP = '/home/rokey/my_map.yaml'
 
 
 def generate_launch_description():
@@ -42,7 +43,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('namespace', default_value=NAMESPACE),
-        DeclareLaunchArgument('map', default_value=MAP),
+        DeclareLaunchArgument('map', default_value=MAP_YAML),
         include(nav, 'localization.launch.py',
                 [('map', LaunchConfiguration('map'))]),
         include(nav, 'nav2.launch.py'),

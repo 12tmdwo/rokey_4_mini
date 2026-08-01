@@ -11,7 +11,8 @@ import cv2
 import numpy as np
 import yaml
 
-MAP_YAML = '/home/rokey/my_map.yaml'
+from mini_turtle4.paths import MAP_YAML
+
 SCALE = 6           # 화면 확대 배율 (맵 픽셀이 5cm라 그냥 보면 너무 작다)
 
 

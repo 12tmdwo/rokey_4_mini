@@ -16,12 +16,12 @@ from vision_msgs.msg import Detection3DArray
 
 from mini_turtle4.depth_math import depth_at, deproject, to_depth_px
 from mini_turtle4.detections import to_msg
+from mini_turtle4.paths import MODEL as MODEL_PATH
 
 # ── 설정 ──────────────────────────────────────────────
 RGB_TOPIC = 'oakd/rgb/preview/image_raw'
 DEPTH_TOPIC = 'oakd/stereo/image_raw'
 DEPTH_INFO_TOPIC = 'oakd/stereo/camera_info'
-MODEL_PATH = '/home/rokey/turtlebot4_ws/best.pt'
 CONF = 0.6
 TOPIC = 'oakd/detections'
 FRAME = 'map'

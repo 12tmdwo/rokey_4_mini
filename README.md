@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-# rokey_4_mini
-=======
 # mini_turtle4
 
 맵 밖에 설치한 웹캠으로 물건을 찾아 TurtleBot4를 그 앞까지 보내는 ROS 2 패키지입니다.
@@ -37,15 +34,19 @@ OAK-D YOLO + depth ────→ map 좌표 (정밀)  ─┘
 ros2 param get /robot4/oakd camera.i_pipeline_type   # RGBD 여야 함
 ```
 
-## 저장소에 없는 파일 3개
+## 데이터 파일
 
-용량이 크거나 현장 전용이라 코드와 함께 배포하지 않습니다. 직접 준비하셔야 합니다.
+| 파일 | 저장소 포함 | 비고 |
+|---|---|---|
+| `resource/my_map.yaml` + `.pgm` | ✅ | `turtlebot4_navigation/slam.launch.py`로 SLAM 후 저장 |
+| `resource/homography.npy` | ✅ | 아래 [3단계](#3-호모그래피-캘리브레이션)에서 생성 |
+| `~/turtlebot4_ws/best.pt` | ❌ | YOLO 학습 결과 (22 MB). 없으면 `yolov8n.pt`로 대체 가능 |
 
-| 파일 | 만드는 법 |
-|---|---|
-| `~/turtlebot4_ws/best.pt` | YOLO 학습 결과. 없으면 `yolov8n.pt`로 대체 가능 |
-| `~/my_map.yaml` + `.pgm` | `turtlebot4_navigation/slam.launch.py`로 SLAM 후 저장 |
-| `~/turtlebot4_ws/homography.npy` | 아래 3단계에서 생성 |
+> ⚠️ 들어 있는 맵과 호모그래피는 **저희 현장 전용**입니다. 다른 곳·다른 웹캠 위치에서는
+> **에러 없이 좌표만 틀립니다.** 환경이 다르면 아래 준비 단계로 둘 다 새로 만드세요.
+
+경로는 [`mini_turtle4/paths.py`](mini_turtle4/paths.py) 한 곳에 모여 있습니다.
+저장소를 다른 데 받으셨으면 `PKG` 한 줄만 고치면 됩니다.
 
 ---
 
@@ -63,7 +64,8 @@ source install/setup.bash
 
 ### 1. 맵 만들기
 
-SLAM으로 맵을 만들고 `~/my_map.yaml`로 저장합니다.
+SLAM으로 맵을 만들고 `resource/my_map.yaml`(+ `.pgm`)로 저장합니다. 두 파일은 반드시
+같은 폴더에 두세요 — yaml 안의 `image:`가 상대 경로입니다.
 
 ### 2. 바닥 기준점 4개 정하기
 
@@ -71,7 +73,8 @@ SLAM으로 맵을 만들고 `~/my_map.yaml`로 저장합니다.
 필요합니다. **벽 모서리**가 가장 좋습니다.
 
 ```bash
-python3 mini_turtle4/map_point_picker.py
+cd ~/turtlebot4_ws/src/mini_turtle4
+python3 -m mini_turtle4.map_point_picker
 ```
 
 맵 이미지가 뜹니다. 기준점 4개를 클릭하면 `MAP_POINTS`에 붙여넣을 형태로 출력됩니다.
@@ -86,7 +89,8 @@ python3 mini_turtle4/map_point_picker.py
 ### 3. 호모그래피 캘리브레이션
 
 ```bash
-python3 mini_turtle4/homography.py
+cd ~/turtlebot4_ws/src/mini_turtle4
+python3 -m mini_turtle4.homography
 ```
 
 웹캠 화면에서 **`MAP_POINTS`와 같은 순서로** 4점을 클릭합니다. 벽 모서리를 쓰신다면
@@ -137,21 +141,26 @@ ros2 launch mini_turtle4 bringup.launch.py namespace:=robot4
 
 | 파일 | 상수 | 현재 값 |
 |---|---|---|
+| [`paths.py`](mini_turtle4/paths.py) | `PKG` | `/home/rokey/turtlebot4_ws/src/mini_turtle4` — 저장소 위치 |
+| | `MODEL` | `/home/rokey/turtlebot4_ws/best.pt` |
 | [`homography.py`](mini_turtle4/homography.py) | `MAP_POINTS` | 현장 실측 4점 — **반드시 교체** |
 | | `CAM_INDEX` | `2` (`ls /dev/video*`로 확인) |
-| | `H_FILE` | `/home/rokey/turtlebot4_ws/homography.npy` |
-| [`webcam_locator_node.py`](mini_turtle4/webcam_locator_node.py) | `H_PATH`, `MODEL_PATH` | 위와 동일한 절대 경로 |
-| | `CONF`, `RATE`, `SHOW` | `0.6`, `5.0 Hz`, `True` |
-| [`oakd_locator_node.py`](mini_turtle4/oakd_locator_node.py) | `MODEL_PATH` | `/home/rokey/turtlebot4_ws/best.pt` |
+| [`webcam_locator_node.py`](mini_turtle4/webcam_locator_node.py) | `CONF`, `RATE`, `SHOW` | `0.6`, `5.0 Hz`, `True` |
 | [`goal_manager_node.py`](mini_turtle4/goal_manager_node.py) | `STOP_DIST` | `0.5` — 물체 앞 정지 거리 (m) |
 | | `UPDATE_THRESH` | `0.15` — 이만큼 움직여야 goal 갱신 |
 | | `MATCH_RADIUS` | `1.0` — 같은 물체로 인정할 반경 |
-| [`robot_bringup.launch.py`](launch/robot_bringup.launch.py) | `NAMESPACE`, `MAP` | `/robot4`, `/home/rokey/my_map.yaml` |
-| [`map_point_picker.py`](mini_turtle4/map_point_picker.py) | `MAP_YAML` | `/home/rokey/my_map.yaml` |
+| [`robot_bringup.launch.py`](launch/robot_bringup.launch.py) | `NAMESPACE` | `/robot4` |
 | [`depth_checker.py`](mini_turtle4/depth_checker.py) | 토픽 2개 | `/robot4/...` |
 
-`CAM_INDEX`는 `homography.py`에만 있고 `webcam_locator_node.py`가 import합니다.
-**한 곳만 고치면 됩니다** — 캘리브레이션과 실행이 다른 카메라를 열면 안 되기 때문입니다.
+파일 경로는 전부 `paths.py` 하나에서 나옵니다. 맵·호모그래피는 `PKG` 기준이라
+저장소를 옮겼을 때 **한 줄만** 고치면 됩니다.
+
+`CAM_INDEX`도 `homography.py`에만 있고 `webcam_locator_node.py`가 import합니다.
+캘리브레이션과 실행이 다른 카메라를 열면 안 되기 때문입니다.
+
+> `paths.py`는 `install/`이 아니라 **소스 트리**를 가리킵니다. 캘리브레이션으로 새로
+> 만든 `homography.npy`를 노드가 바로 읽게 하려는 것입니다. `share/`를 쓰면 매번
+> `colcon build`를 해야 하고, 빼먹으면 **에러 없이 옛 좌표를 계속 씁니다.**
 
 ---
 
@@ -177,11 +186,12 @@ ros2 launch mini_turtle4 bringup.launch.py namespace:=robot4
 각 모듈은 자체 검사를 갖고 있습니다.
 
 ```bash
-python3 mini_turtle4/homography.py --test
-python3 mini_turtle4/depth_math.py --test
-python3 mini_turtle4/detections.py --test
-python3 mini_turtle4/nav_controller.py --test
-python3 mini_turtle4/map_point_picker.py --test
+cd ~/turtlebot4_ws/src/mini_turtle4
+python3 -m mini_turtle4.homography --test
+python3 -m mini_turtle4.depth_math --test
+python3 -m mini_turtle4.detections --test
+python3 -m mini_turtle4.nav_controller --test
+python3 -m mini_turtle4.map_point_picker --test
 ```
 
 ### 토픽
@@ -281,4 +291,3 @@ RGBD로 다시 띄우세요.
 ## 라이선스
 
 Apache-2.0
->>>>>>> 77e72ed (mini_project_v1)

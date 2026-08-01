@@ -12,10 +12,10 @@ from mini_turtle4.detections import to_msg
 # CAM_INDEX는 homography.py 것을 그대로 쓴다 — 캘리브레이션한 카메라와
 # 다른 카메라를 열면 H가 통째로 무의미해지므로 상수를 두 곳에 두지 않는다.
 from mini_turtle4.homography import CAM_INDEX, bottom_center, load, to_map
+from mini_turtle4.paths import H_FILE as H_PATH
+from mini_turtle4.paths import MODEL as MODEL_PATH
 
 # ── 설정 ──────────────────────────────────────────────
-H_PATH = '/home/rokey/turtlebot4_ws/homography.npy'
-MODEL_PATH = '/home/rokey/turtlebot4_ws/best.pt'
 CONF = 0.6
 RATE = 5.0                  # Hz
 TOPIC = 'webcam/detections'

@@ -8,6 +8,8 @@ import sys
 import cv2
 import numpy as np
 
+from mini_turtle4.paths import H_FILE
+
 # 여기만 채우세요. 클릭하는 순서와 같은 순서로 map 프레임 실측 좌표 (미터).
 # 맵 네 귀퉁이처럼 넓게 분산시킬 것.
 MAP_POINTS = [
@@ -18,8 +20,6 @@ MAP_POINTS = [
 ]
 
 CAM_INDEX = 2
-
-H_FILE = '/home/rokey/turtlebot4_ws/homography.npy'
 
 
 def to_map(H, u, v):
