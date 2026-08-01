@@ -54,11 +54,14 @@ ros2 param get /robot4/oakd camera.i_pipeline_type   # RGBD 여야 함
 
 ```bash
 cd ~/turtlebot4_ws/src
-git clone <이 저장소> mini_turtle4
+git clone https://github.com/12tmdwo/rokey_4_mini.git
 cd ~/turtlebot4_ws
 colcon build --packages-select mini_turtle4
 source install/setup.bash
 ```
+
+패키지가 `src/rokey_4_mini/mini_turtle4/`에 놓이지만 colcon이 알아서 찾습니다.
+대신 [`paths.py`](mini_turtle4/paths.py)의 `PKG`를 그 경로로 맞춰주세요.
 
 ## 준비 (최초 1회)
 
