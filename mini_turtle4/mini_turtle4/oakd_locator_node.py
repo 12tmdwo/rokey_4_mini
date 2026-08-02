@@ -10,17 +10,19 @@ from cv_bridge import CvBridge
 from geometry_msgs.msg import PointStamped
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
-from sensor_msgs.msg import CameraInfo, Image
+from sensor_msgs.msg import CameraInfo, CompressedImage
 from tf2_ros import Buffer, TransformException, TransformListener
 from vision_msgs.msg import Detection3DArray
 
-from mini_turtle4.depth_math import depth_at, deproject, to_depth_px
+from mini_turtle4.depth_math import decode_depth, depth_at, deproject, to_depth_px
 from mini_turtle4.detections import to_msg
 from mini_turtle4.paths import MODEL as MODEL_PATH
 
 # ── 설정 ──────────────────────────────────────────────
-RGB_TOPIC = 'oakd/rgb/preview/image_raw'
-DEPTH_TOPIC = 'oakd/stereo/image_raw'
+# compressed로 받아 WiFi 부담을 줄인다. rgb/image_raw는 depth와 동일 704x704라
+# to_depth_px가 1:1 통과 (yolo_node와 동일 근거). camera_info는 작아서 raw 그대로.
+RGB_TOPIC = 'oakd/rgb/image_raw/compressed'
+DEPTH_TOPIC = 'oakd/stereo/image_raw/compressedDepth'
 DEPTH_INFO_TOPIC = 'oakd/stereo/camera_info'
 CONF = 0.6
 TOPIC = 'oakd/detections'
@@ -46,9 +48,9 @@ class OakdLocator(Node):
         self.pub = self.create_publisher(Detection3DArray, TOPIC, 10)
         self.create_subscription(CameraInfo, DEPTH_INFO_TOPIC,
                                  self.info_cb, 10)
-        self.create_subscription(Image, DEPTH_TOPIC,
+        self.create_subscription(CompressedImage, DEPTH_TOPIC,
                                  self.depth_cb, qos_profile_sensor_data)
-        self.create_subscription(Image, RGB_TOPIC,
+        self.create_subscription(CompressedImage, RGB_TOPIC,
                                  self.rgb_cb, qos_profile_sensor_data)
         self.get_logger().info(f'{MODEL_PATH} 로드 — {TOPIC} 발행')
 
@@ -56,14 +58,14 @@ class OakdLocator(Node):
         self.K = np.array(msg.k).reshape(3, 3)
 
     def depth_cb(self, msg):
-        self.depth = self.bridge.imgmsg_to_cv2(msg, 'passthrough')
+        self.depth = decode_depth(msg.data, msg.format)
         self.depth_frame = msg.header.frame_id
 
     def rgb_cb(self, msg):
         if self.depth is None or self.K is None:
             return
 
-        img = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
+        img = self.bridge.compressed_imgmsg_to_cv2(msg, 'bgr8')
         # agnostic_nms: webcam_locator_node와 같은 이유 (라벨 중복 방지)
         result = self.model(img, conf=CONF, agnostic_nms=True,
                             verbose=False)[0]
