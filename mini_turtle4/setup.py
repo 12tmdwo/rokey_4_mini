@@ -36,6 +36,7 @@ setup(
             'oakd_locator_node = mini_turtle4.oakd_locator_node:main',
             'goal_manager_node = mini_turtle4.goal_manager_node:main',
             'dummy_obstacle_node = mini_turtle4.dummy_obstacle_node:main',
+            'detection_marker_node = mini_turtle4.detection_marker_node:main',
         ],
     },
 )
