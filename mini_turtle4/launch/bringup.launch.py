@@ -19,7 +19,8 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 WEBCAM_NODE = 'webcam_locator_node'   # 유일하게 물리 웹캠을 여는 노드
-OTHER_NODES = ['oakd_locator_node', 'goal_manager_node', 'dummy_obstacle_node']
+OTHER_NODES = ['oakd_locator_node', 'goal_manager_node', 'dummy_obstacle_node',
+               'detection_marker_node']
 
 # tf2_ros의 TransformListener는 네임스페이스를 무시하고 절대 경로 '/tf'를 구독한다
 # (transform_listener.py:85). 상대 경로로 리맵해야 '/robot4/tf'를 듣는다.
