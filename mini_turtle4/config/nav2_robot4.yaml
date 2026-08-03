@@ -158,7 +158,7 @@
       height: 3
       resolution: 0.06
       robot_radius: 0.175
-      plugins: ["static_layer", "voxel_layer", "inflation_layer"]
+      plugins: ["static_layer", "voxel_layer", "dummy_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 4.0
@@ -172,7 +172,7 @@
         z_voxels: 16
         max_obstacle_height: 2.0
         mark_threshold: 0
-        observation_sources: scan dummy
+        observation_sources: scan
         scan:
           topic: scan
           max_obstacle_height: 2.0
@@ -183,6 +183,13 @@
           raytrace_min_range: 0.0
           obstacle_max_range: 2.5
           obstacle_min_range: 0.0
+      # scan과 별도 레이어. scan(clearing:True)의 raytrace가 dummy가 마킹한 셀을
+      # 지워버리는 걸 막기 위해 분리 — 같은 레이어를 공유하면 clearing:False라도
+      # 다른 소스의 클리어링에서 보호되지 않는다.
+      dummy_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: dummy
         dummy:
           topic: dummy_cloud
           data_type: "PointCloud2"
@@ -208,11 +215,11 @@
       robot_radius: 0.175
       resolution: 0.06
       track_unknown_space: true
-      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      plugins: ["static_layer", "obstacle_layer", "dummy_layer", "inflation_layer"]
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
-        observation_sources: scan dummy
+        observation_sources: scan
         scan:
           topic: scan
           max_obstacle_height: 2.0
@@ -223,6 +230,11 @@
           raytrace_min_range: 0.0
           obstacle_max_range: 2.5
           obstacle_min_range: 0.0
+      # scan과 별도 레이어 — 이유는 local_costmap 쪽 주석 참고
+      dummy_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: dummy
         dummy:
           topic: dummy_cloud
           data_type: "PointCloud2"
