@@ -5,8 +5,9 @@
 """
 import math
 
+from builtin_interfaces.msg import Duration
 from geometry_msgs.msg import PoseStamped
-from nav2_msgs.action import NavigateToPose
+from nav2_msgs.action import NavigateToPose, Spin
 from rclpy.action import ActionClient
 
 
@@ -34,13 +35,17 @@ def make_pose(frame, x, y, yaw):
 
 
 class Navigator:
-    """NavigateToPose 액션 래퍼. 한 번에 goal 하나만."""
+    """NavigateToPose + Spin(제자리 회전 탐색) 액션 래퍼. 한 번에 goal 하나만."""
 
-    def __init__(self, node, action='navigate_to_pose'):
+    def __init__(self, node, action='navigate_to_pose', spin_action='spin'):
         self.log = node.get_logger()
         self.client = ActionClient(node, NavigateToPose, action)
         self.active = False
         self.handle = None
+
+        self.spin_client = ActionClient(node, Spin, spin_action)
+        self.spin_handle = None
+        self._want_spin = False  # cancel_spin() 전까지 계속 회전 (아래 _spin_done 참고)
 
     def go(self, pose):
         """goal 전송 (비동기). 서버가 받아들이면 True.
@@ -83,6 +88,54 @@ class Navigator:
         self.handle = None
         # status 4 = SUCCEEDED
         self.log.info(f'주행 종료 (status={fut.result().status})')
+
+    # ── 제자리 회전 탐색 (놓친 물체 재획득용) ──────────
+    def spin_search(self, angle=2 * math.pi, time_allowance=30):
+        """물체를 놓쳤을 때 제자리 회전하며 찾는다. 이미 도는 중이면 무시.
+
+        한 바퀴(angle) 다 돌아도 못 찾으면 _spin_done에서 스스로 다시 돈다 —
+        cancel_spin()으로 명시적으로 멈출 때까지 계속 (재획득은 호출 쪽 책임).
+        """
+        if self._want_spin:
+            return
+        self._want_spin = True
+        self._send_spin(angle, time_allowance)
+
+    def cancel_spin(self):
+        """탐색 회전을 멈춘다 (물체를 다시 찾았을 때 호출)."""
+        self._want_spin = False
+        if self.spin_handle:
+            self.spin_handle.cancel_goal_async()
+            self.spin_handle = None
+
+    def _send_spin(self, angle, time_allowance):
+        if not self.spin_client.server_is_ready():
+            self.log.warn('spin 서버 아직 없음 — Nav2 behavior_server가 켜져 있나요?',
+                          throttle_duration_sec=5.0)
+            return
+        goal = Spin.Goal()
+        goal.target_yaw = angle
+        goal.time_allowance = Duration(sec=time_allowance)
+        self.spin_client.send_goal_async(goal).add_done_callback(
+            lambda fut: self._spin_accepted(fut, angle, time_allowance))
+        self.log.info('탐색 회전 시작')
+
+    def _spin_accepted(self, fut, angle, time_allowance):
+        handle = fut.result()
+        if not handle.accepted:
+            self.log.error('spin 거부됨')
+            self._want_spin = False
+            return
+        self.spin_handle = handle
+        handle.get_result_async().add_done_callback(
+            lambda f: self._spin_done(f, handle, angle, time_allowance))
+
+    def _spin_done(self, fut, handle, angle, time_allowance):
+        if handle is not self.spin_handle:
+            return              # 이미 취소되고 다른 회전으로 교체됨 — 무시
+        self.spin_handle = None
+        if self._want_spin:      # 한 바퀴 다 돌았는데 아직 못 찾음 -> 계속 회전
+            self._send_spin(angle, time_allowance)
 
 
 def _self_check():
