@@ -37,10 +37,14 @@ def items(msg):
             for d in msg.detections if d.results]
 
 
-def nearest(msg, x, y):
-    """(x, y)에서 가장 가까운 탐지 -> (class_id, ox, oy). 없으면 None."""
+def nearest(msg, x, y, class_id=None):
+    """(x, y)에서 가장 가까운 탐지 -> (class_id, ox, oy). 없으면 None.
+
+    class_id를 주면 그 클래스만 후보로 본다 (예: dummy 같은 장애물 제외).
+    """
     best = min(((math.hypot(ox - x, oy - y), cid, ox, oy)
-                for cid, _, ox, oy in items(msg)), default=None)
+                for cid, _, ox, oy in items(msg)
+                if class_id is None or cid == class_id), default=None)
     return best[1:] if best else None
 
 
@@ -69,6 +73,9 @@ def _self_check():
     assert nearest(msg, 0.0, 0.0) == ('bottle', 1.0, 0.0)
     assert nearest(msg, 5.0, 0.0) == ('cup', 3.0, 0.0)
     assert nearest(to_msg('map', stamp, []), 0.0, 0.0) is None
+    # class_id 필터: cup만 후보 -> bottle이 더 가까워도 cup을 고른다
+    assert nearest(msg, 0.0, 0.0, 'cup') == ('cup', 3.0, 0.0)
+    assert nearest(msg, 0.0, 0.0, 'car') is None            # 없는 클래스 -> None
 
     # 반경 안 + 클래스 일치 -> 가장 가까운 bottle
     assert match(msg, 1.05, 0.0, 'bottle', 0.5) == (1.0, 0.0)
