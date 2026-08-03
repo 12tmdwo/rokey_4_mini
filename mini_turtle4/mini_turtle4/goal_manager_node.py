@@ -84,7 +84,10 @@ class GoalManager(Node):
         if self.target is None:
             return                          # 웹캠이 먼저 목표를 정해야 함
         now = self.now()
-        if self._match_update(msg):
+        # 탐색 회전 중이면 옛 좌표 반경 매칭을 푼다. 차가 그새 MATCH_RADIUS 밖으로
+        # 움직였으면 match가 계속 실패해 영영 재획득 못 하고 돌기만 하기 때문.
+        hit = self._reacquire(msg) if self.stopped else self._match_update(msg)
+        if hit:
             self.locked = True              # 이후 웹캠 무시
             self.last_seen = now
             if self.stopped:
@@ -106,6 +109,15 @@ class GoalManager(Node):
         if found is None:
             return False
         self.target = (cls, *found)
+        return True
+
+    def _reacquire(self, msg):
+        """탐색 회전 중 재획득: 반경 제한 없이 같은 클래스 최근접을 목표로 갱신."""
+        cls, x, y = self.target
+        found = nearest(msg, x, y, cls)     # (cid, ox, oy) — 반경 무제한
+        if found is None:
+            return False
+        self.target = (cls, found[1], found[2])
         return True
 
     # ── goal 계산·전송 ───────────────────────────────
