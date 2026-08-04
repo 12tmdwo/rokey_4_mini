@@ -3,8 +3,8 @@
     [탐색] 웹캠이 차를 지정 -> 그쪽으로 접근 (goal 계속 갱신)
       -> [추적] OAK-D가 같은 차를 잡으면 -> OAK-D 좌표로 계속 갱신 = 추적
                 이 순간부터 웹캠은 완전 무시 (locked)
-      -> [정지] OAK-D가 LOST_TIMEOUT 동안 못 보면 -> goal 취소, 로봇 정지
-                다시 잡으면 -> [추적] 재개
+      -> [정지+탐색회전] OAK-D가 LOST_TIMEOUT 동안 못 보면 -> goal 취소, 제자리 회전
+                하며 재탐색. 다시 잡으면 -> 회전 멈추고 [추적] 재개
 
 Nav2는 주행 중 새 goal을 받으면 선점(preempt)해서 멈추지 않고 목표만 바꾼다.
 goal 재전송은 TRACK_RATE로 상한을 건다 (매 검출 프레임마다 쏘면 Nav2가 버벅임).
@@ -84,16 +84,23 @@ class GoalManager(Node):
         if self.target is None:
             return                          # 웹캠이 먼저 목표를 정해야 함
         now = self.now()
-        if self._match_update(msg):
+        # 탐색 회전 중이면 옛 좌표 반경 매칭을 푼다. 차가 그새 MATCH_RADIUS 밖으로
+        # 움직였으면 match가 계속 실패해 영영 재획득 못 하고 돌기만 하기 때문.
+        hit = self._reacquire(msg) if self.stopped else self._match_update(msg)
+        if hit:
             self.locked = True              # 이후 웹캠 무시
             self.last_seen = now
+            if self.stopped:
+                self.nav.cancel_spin()       # 다시 찾았으니 탐색 회전 중단
+                self.get_logger().info('재획득 — 탐색 회전 중단, 추적 재개')
             self.stopped = False            # 다시 봤으니 정지 해제 = 추적 재개
             self.send('OAK-D')
         elif self.locked and not self.stopped and \
                 lost(self.last_seen, now, LOST_TIMEOUT):
-            self.nav.cancel()               # 놓쳤다 -> 아예 정지
+            self.nav.cancel()               # 놓쳤다 -> 정지
             self.stopped = True
-            self.get_logger().info(f'OAK-D {LOST_TIMEOUT}s 놓침 — 정지')
+            self.nav.spin_search()          # 제자리 회전하며 재탐색
+            self.get_logger().info(f'OAK-D {LOST_TIMEOUT}s 놓침 — 정지 후 탐색 회전')
 
     def _match_update(self, msg):
         """현재 목표와 같은 물체를 찾아 좌표를 갱신. 찾았으면 True."""
@@ -102,6 +109,15 @@ class GoalManager(Node):
         if found is None:
             return False
         self.target = (cls, *found)
+        return True
+
+    def _reacquire(self, msg):
+        """탐색 회전 중 재획득: 반경 제한 없이 같은 클래스 최근접을 목표로 갱신."""
+        cls, x, y = self.target
+        found = nearest(msg, x, y, cls)     # (cid, ox, oy) — 반경 무제한
+        if found is None:
+            return False
+        self.target = (cls, found[1], found[2])
         return True
 
     # ── goal 계산·전송 ───────────────────────────────

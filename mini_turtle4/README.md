@@ -1,8 +1,8 @@
 # mini_turtle4
 
 맵 밖에 설치한 웹캠으로 **움직이는 차를 찾아** TurtleBot4가 계속 쫓아가고, 길에 놓인
-**dummy는 피해서** 가는 ROS 2 패키지입니다. 로봇이 가까워지면 자신의 OAK-D로 차를
-직접 잡아 실시간 추적하고, 웹캠이 잡은 dummy 좌표는 Nav2 코스트맵에 장애물로 넣어
+**dummy는 피해서** 가는 ROS 2 패키지입니다. 로봇이 가까워지면 자신의 OAK-D로 차와
+dummy를 직접 잡아 좌표를 정밀 보정하고, dummy 좌표는 Nav2 코스트맵에 장애물로 넣어
 planner가 우회하게 합니다.
 
 ```
@@ -10,7 +10,9 @@ planner가 우회하게 합니다.
                                         ├─→ goal_manager ─→ Nav2 (추적)
 OAK-D YOLO + depth ────→ 차 좌표(정밀) ─┘
 
-웹캠 YOLO ────────────→ dummy 좌표 ─→ dummy_obstacle ─→ 코스트맵 (회피)
+웹캠 YOLO ─→ dummy 좌표(대략) ─┐
+                              ├─→ dummy_obstacle ─→ 코스트맵 (회피)
+OAK-D YOLO + depth ─→ dummy 좌표(정밀) ─┘
 ```
 
 **차 추적**
@@ -20,12 +22,17 @@ OAK-D YOLO + depth ────→ 차 좌표(정밀) ─┘
 3. 주행 중 OAK-D가 **같은 클래스**의 차를 반경 1 m 안에서 잡으면, 그때부터 OAK-D 좌표로
    계속 갱신 = **추적**. 이 순간부터 웹캠은 무시합니다. Nav2는 멈추지 않고 목표만
    바꾸며(선점), goal 재전송은 3 Hz로 상한을 둡니다.
-4. OAK-D가 1.5 초 동안 차를 놓치면 goal을 취소하고 **정지**, 다시 잡으면 추적을 재개합니다.
+4. OAK-D가 1.5 초 동안 차를 놓치면 goal을 취소하고 **제자리로 회전하며 재탐색**합니다.
+   다시 잡으면 회전을 멈추고 추적을 재개합니다.
 
 **dummy 회피**
 
-- 웹캠이 `dommy`를 잡으면 그 좌표를 PointCloud2로 코스트맵에 넣어 장애물로 만듭니다.
-  RPLIDAR가 못 잡는 dummy를 planner가 우회합니다. dummy는 고정으로 가정합니다.
+- 웹캠이 `dommy`를 잡으면 그 대략적 좌표를 PointCloud2로 코스트맵에 넣어 장애물로
+  만듭니다. RPLIDAR가 못 잡는 dummy를 planner가 우회합니다.
+- 로봇이 가까워져 OAK-D가 **같은 dummy**를 반경 0.3 m 안에서 잡으면, 그 정밀 좌표로
+  보정하고 잠금(locked) — 이후 웹캠은 무시합니다. 웹캠이 dummy를 한 번도 못 본
+  경우에도 OAK-D가 먼저 잡으면 그걸 그대로 채택합니다(fallback). dummy는 고정으로
+  가정하므로 한 번 확정되면 계속 그 좌표로 발행합니다.
 
 > ⚠️ **이 저장소는 특정 환경(사용자 `rokey`, 네임스페이스 `robot4`)에 맞춰져 있습니다.**
 > 다른 곳에서 쓰시려면 아래 [고쳐야 할 값](#고쳐야-할-값)을 먼저 수정하세요.
@@ -170,7 +177,8 @@ ros2 launch mini_turtle4 bringup.launch.py namespace:=robot4
 | | `TRACK_RATE` | `3.0` — goal 재전송 상한 (Hz) |
 | | `LOST_TIMEOUT` | `1.5` — 이만큼 놓치면 정지 (s) |
 | [`dummy_obstacle_node.py`](mini_turtle4/dummy_obstacle_node.py) | `DUMMY_CLASS` | `dommy` — 장애물 클래스명 |
-| | `DUMMY_RADIUS` | `0.15` — 마킹 반경 (m) |
+| | `DUMMY_RADIUS` | `0.1` — 마킹 반경 (m) |
+| | `MATCH_RADIUS` | `0.3` — OAK-D 보정 시 같은 dummy로 인정할 반경 (m) |
 | [`robot_bringup.launch.py`](launch/robot_bringup.launch.py) | `NAMESPACE` | `/robot4` |
 | [`depth_checker.py`](mini_turtle4/depth_checker.py) | 토픽 2개 | `/robot4/...` |
 
@@ -194,8 +202,8 @@ ros2 launch mini_turtle4 bringup.launch.py namespace:=robot4
 |---|---|
 | `webcam_locator_node` | 웹캠 YOLO → bbox 하단 중앙 → 호모그래피 → `webcam/detections` |
 | `oakd_locator_node` | OAK-D(compressed) YOLO + depth → TF → `oakd/detections` (주행 안 함) |
-| `goal_manager_node` | 두 좌표로 차를 추적하는 Nav2 goal 결정·갱신·정지 |
-| `dummy_obstacle_node` | `webcam/detections`의 `dommy` → PointCloud2 `dummy_cloud` (코스트맵 장애물) |
+| `goal_manager_node` | 두 좌표로 차를 추적하는 Nav2 goal 결정·갱신·정지·탐색회전 |
+| `dummy_obstacle_node` | `webcam/detections` + `oakd/detections`의 `dommy` → PointCloud2 `dummy_cloud` (코스트맵 장애물). OAK-D가 잡으면 정밀 좌표로 보정·잠금 |
 
 좌표 계산과 ROS·주행은 파일이 분리돼 있습니다.
 
@@ -312,11 +320,21 @@ RGBD로 다시 띄우세요.
   WiFi 부담을 줄입니다. 카메라 설정을 바꾸면 `depth_checker`로 다시 확인하세요.
 - **차 추적 방식** — goal을 3 Hz로 계속 재전송하며 쫓습니다(TRACK_RATE). 매 프레임 쏘면
   Nav2가 버벅여서 시간 상한을 뒀습니다. OAK-D가 차를 잡은 뒤로는 웹캠을 무시하고(locked),
-  1.5 초 놓치면 정지 후 재획득 시 재개합니다.
+  1.5 초 놓치면 `NavigateToPose`를 취소하고 `Spin` 액션(`behavior_server`)으로 제자리
+  회전하며 재탐색합니다. 회전은 한 바퀴 다 돌아도 못 찾으면 스스로 다시 돌고
+  (`nav_controller.Navigator.spin_search`), OAK-D가 재획득하면 그제서야 멈추고 추적을
+  재개합니다.
 - **dummy를 코스트맵에 넣는 이유** — RPLIDAR가 못 잡는 장애물이라 YOLO 좌표를
   PointCloud2로 obstacle 관측원에 흘려 넣습니다. 고정 장애물이라 `clearing:False`로 그
   세션 동안 유지합니다(디스크 저장 아님 — 재시작하면 웹캠이 다시 봐서 재생성). 설정은
   [`config/nav2.yaml`](config/nav2.yaml)에 turtlebot4 기본 + `dummy` 소스로 들어 있습니다.
+- **dummy도 OAK-D로 보정하는 이유** — 웹캠은 맵 밖에서 비스듬히 찍고 undistort도 안
+  해서, 화면 가장자리·호모그래피 외삽 구간은 오차가 코스트맵 inflation 마진(0.45 m)을
+  넘을 수 있습니다. `clearing:False`라 한 번 잘못 박히면 세션 내내 그대로라 초기 오차가
+  누적되면 위험합니다. 그래서 로봇이 가까워져 OAK-D가 같은 dummy를 잡으면(반경 0.3 m)
+  그 정밀 좌표로 덮어쓰고 잠급니다 — 이후 웹캠 갱신은 무시합니다(차 추적과 동일 패턴).
+  웹캠이 dummy를 아예 못 본 경우에도 OAK-D가 먼저 잡으면 그대로 채택해, 웹캠 단일 관측
+  실패가 회피 기능 전체를 무력화하지 않게 합니다.
 
 ## 라이선스
 
