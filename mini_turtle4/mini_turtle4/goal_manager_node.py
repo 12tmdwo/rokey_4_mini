@@ -20,6 +20,7 @@ from mini_turtle4.nav_controller import Navigator, approach_point, make_pose
 # ── 설정 ──────────────────────────────────────────────
 WEBCAM_TOPIC = 'webcam/detections'
 OAKD_TOPIC = 'oakd/detections'
+TARGET_CLASS = 'car'   # 이 클래스만 추적 목표 (dummy 등 장애물은 목표로 안 잡음)
 STOP_DIST = 0.5        # 물체 앞 몇 m에서 멈출지
 MATCH_RADIUS = 1.0     # 이 반경 + 클래스 일치여야 '같은 물체'로 인정
 TRACK_RATE = 3.0       # Hz — goal 재전송 상한 (매 프레임 쏘면 Nav2가 버벅임)
@@ -69,7 +70,7 @@ class GoalManager(Node):
             robot = self.robot_xy()
             if robot is None:
                 return
-            pick = nearest(msg, *robot)     # 로봇에서 가장 가까운 물체 (차 1대뿐)
+            pick = nearest(msg, *robot, TARGET_CLASS)  # 가장 가까운 car (dummy 제외)
             if pick is None:
                 return
             self.target = pick

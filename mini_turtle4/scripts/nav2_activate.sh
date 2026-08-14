@@ -2,23 +2,27 @@
 # WiFi + Discovery Server 환경에서는 lifecycle 전환 서비스 응답이 자주 타임아웃 나서
 # map_server/amcl/nav2가 unconfigured나 inactive에 멈춘다. 멈춘 것만 골라 밀어 올린다.
 #
-#   ./nav2_activate.sh [namespace]      기본값 robot4
+#   ./nav2_activate.sh [namespace] [wait_sec] [nodes]   기본값 robot4 90 전체
 #
 # localization.launch.py / nav2.launch.py 를 먼저 띄운 뒤에 실행할 것.
 set -u
 NS="${1:-robot4}"
 WAIT="${2:-90}"     # 노드가 뜰 때까지 기다릴 최대 초
 
-# 순서 중요: 코스트맵이 map_server를 먼저 필요로 한다.
-NODES="map_server amcl controller_server smoother_server planner_server \
-       behavior_server bt_navigator waypoint_follower velocity_smoother"
+# 3번째 인자로 활성화할 노드 집합을 좁힐 수 있다 (예: localization만, navigation만).
+# 순서 중요: 코스트맵이 map_server를 먼저 필요로 한다. 생략하면 전체.
+NODES="${3:-}"
+if [ -z "$NODES" ]; then
+    NODES="map_server amcl controller_server smoother_server planner_server \
+           behavior_server bt_navigator waypoint_follower velocity_smoother"
+fi
 
 state() { timeout 8 ros2 lifecycle get "/$NS/$1" 2>/dev/null | tail -1; }
 
-# launch와 동시에 실행돼도 되도록, 마지막에 뜨는 노드까지 기다린다.
+# launch와 동시에 실행돼도 되도록, 목록의 마지막 노드가 뜰 때까지 기다린다.
 echo "노드 대기 중 (최대 ${WAIT}초)..."
 deadline=$((SECONDS + WAIT))
-until [ -n "$(state bt_navigator)" ] && [ -n "$(state map_server)" ]; do
+until [ -n "$(state "${NODES##* }")" ]; do
     if [ "$SECONDS" -ge "$deadline" ]; then
         echo "❌ ${WAIT}초 안에 노드가 안 떴습니다. launch 터미널의 에러를 확인하세요."
         exit 1

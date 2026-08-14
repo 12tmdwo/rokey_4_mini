@@ -1,23 +1,31 @@
 # mini_turtle4
 
-맵 밖에 설치한 웹캠으로 차를 찾아 TurtleBot4를 그쪽으로 보내고, 로봇의 OAK-D가
-같은 차를 잡으면 그때부터 OAK-D 좌표로 **움직이는 차를 쫓는** ROS 2 패키지입니다.
+맵 밖에 설치한 웹캠으로 **움직이는 차를 찾아** TurtleBot4가 계속 쫓아가고, 길에 놓인
+**dummy는 피해서** 가는 ROS 2 패키지입니다. 로봇이 가까워지면 자신의 OAK-D로 차를
+직접 잡아 실시간 추적하고, 웹캠이 잡은 dummy 좌표는 Nav2 코스트맵에 장애물로 넣어
+planner가 우회하게 합니다.
 
 ```
-웹캠 YOLO ─ 호모그래피 ─→ map 좌표 (대략)  ─┐
-                                            ├─→ goal_manager ─→ Nav2
-OAK-D YOLO + depth ────→ map 좌표 (정밀)  ─┘
+웹캠 YOLO ─ 호모그래피 ─→ 차 좌표(대략) ─┐
+                                        ├─→ goal_manager ─→ Nav2 (추적)
+OAK-D YOLO + depth ────→ 차 좌표(정밀) ─┘
+
+웹캠 YOLO ────────────→ dummy 좌표 ─→ dummy_obstacle ─→ 코스트맵 (회피)
 ```
 
-차는 하나뿐이라고 가정합니다. `goal_manager`는 세 상태로 움직입니다.
+**차 추적**
 
-1. **탐색** — 웹캠이 차를 찾아 map 좌표를 냅니다. 로봇에서 가장 가까운 차가 목표가
-   되고, 그 앞 0.5 m 지점으로 Nav2 goal을 보내며 접근합니다.
-2. **추적** — OAK-D가 **같은 차**를 반경 1 m 안에서 처음 잡는 순간부터, OAK-D 좌표로
-   goal을 매번 갱신해 움직이는 차를 쫓습니다. 이때부터 웹캠은 완전히 무시합니다.
-   Nav2는 멈추지 않고 목표만 바꿉니다(선점). 재전송은 3 Hz로 상한을 겁니다.
-3. **정지·재개** — OAK-D가 1.5 s 동안 연속으로 차를 놓치면 goal을 취소해 멈춥니다.
-   한 프레임 미검출은 무시하므로(디바운스), 다시 잡으면 추적을 재개합니다.
+1. 웹캠이 차를 찾아 map 좌표를 냅니다. 로봇에서 가장 가까운 **`car`**가 목표가 됩니다(dummy 제외).
+2. 그 좌표 앞 0.5 m 지점으로 Nav2 goal을 보내며 접근합니다(계속 갱신).
+3. 주행 중 OAK-D가 **같은 클래스**의 차를 반경 1 m 안에서 잡으면, 그때부터 OAK-D 좌표로
+   계속 갱신 = **추적**. 이 순간부터 웹캠은 무시합니다. Nav2는 멈추지 않고 목표만
+   바꾸며(선점), goal 재전송은 3 Hz로 상한을 둡니다.
+4. OAK-D가 1.5 초 동안 차를 놓치면 goal을 취소하고 **정지**, 다시 잡으면 추적을 재개합니다.
+
+**dummy 회피**
+
+- 웹캠이 `dommy`를 잡으면 그 좌표를 PointCloud2로 코스트맵에 넣어 장애물로 만듭니다.
+  RPLIDAR가 못 잡는 dummy를 planner가 우회합니다. dummy는 고정으로 가정합니다.
 
 > ⚠️ **이 저장소는 특정 환경(사용자 `rokey`, 네임스페이스 `robot4`)에 맞춰져 있습니다.**
 > 다른 곳에서 쓰시려면 아래 [고쳐야 할 값](#고쳐야-할-값)을 먼저 수정하세요.
@@ -122,7 +130,10 @@ cd ~/turtlebot4_ws && source install/setup.bash
 ros2 launch mini_turtle4 robot_bringup.launch.py
 ```
 
-localization, Nav2, RViz가 함께 뜨고 `nav2_activate.sh`가 lifecycle을 활성화합니다.
+localization(map_server·amcl)이 먼저 뜨고 **active된 뒤에야** Nav2(navigation)가 이어서
+뜹니다 — 코스트맵이 맵(map_server)과 `map→odom` TF(amcl)를 필요로 하기 때문입니다.
+`nav2_activate.sh`가 각 단계 lifecycle을 활성화하고 RViz도 함께 뜹니다. Nav2는
+`config/nav2.yaml`(turtlebot4 기본 + dummy 장애물 소스)로 뜹니다.
 `전부 active`가 나오면 준비된 것입니다.
 
 **RViz에서 `2D Pose Estimate`로 초기 위치를 찍으세요.** AMCL은 위치를 기억하지 않으므로
@@ -153,10 +164,13 @@ ros2 launch mini_turtle4 bringup.launch.py namespace:=robot4
 | [`homography.py`](mini_turtle4/homography.py) | `MAP_POINTS` | 현장 실측 4점 — **반드시 교체** |
 | | `CAM_INDEX` | `2` (`ls /dev/video*`로 확인) |
 | [`webcam_locator_node.py`](mini_turtle4/webcam_locator_node.py) | `CONF`, `RATE`, `SHOW` | `0.6`, `5.0 Hz`, `True` |
-| [`goal_manager_node.py`](mini_turtle4/goal_manager_node.py) | `STOP_DIST` | `0.5` — 차 앞 정지 거리 (m) |
-| | `MATCH_RADIUS` | `1.0` — 같은 차로 인정할 반경 (m) |
-| | `TRACK_RATE` | `3.0` — 추적 중 goal 재전송 상한 (Hz) |
-| | `LOST_TIMEOUT` | `1.5` — 이만큼 연속으로 놓치면 정지 (s) |
+| [`goal_manager_node.py`](mini_turtle4/goal_manager_node.py) | `TARGET_CLASS` | `car` — 추적할 클래스 (dummy 제외) |
+| | `STOP_DIST` | `0.5` — 물체 앞 정지 거리 (m) |
+| | `MATCH_RADIUS` | `1.0` — 같은 물체로 인정할 반경 |
+| | `TRACK_RATE` | `3.0` — goal 재전송 상한 (Hz) |
+| | `LOST_TIMEOUT` | `1.5` — 이만큼 놓치면 정지 (s) |
+| [`dummy_obstacle_node.py`](mini_turtle4/dummy_obstacle_node.py) | `DUMMY_CLASS` | `dommy` — 장애물 클래스명 |
+| | `DUMMY_RADIUS` | `0.15` — 마킹 반경 (m) |
 | [`robot_bringup.launch.py`](launch/robot_bringup.launch.py) | `NAMESPACE` | `/robot4` |
 | [`depth_checker.py`](mini_turtle4/depth_checker.py) | 토픽 2개 | `/robot4/...` |
 
@@ -179,15 +193,16 @@ ros2 launch mini_turtle4 bringup.launch.py namespace:=robot4
 | 이름 | 역할 |
 |---|---|
 | `webcam_locator_node` | 웹캠 YOLO → bbox 하단 중앙 → 호모그래피 → `webcam/detections` |
-| `oakd_locator_node` | OAK-D YOLO + depth → TF → `oakd/detections` (주행 안 함) |
-| `goal_manager_node` | 두 좌표를 받아 차를 쫓음 (탐색→추적→정지·재개), Nav2 goal 관리 |
+| `oakd_locator_node` | OAK-D(compressed) YOLO + depth → TF → `oakd/detections` (주행 안 함) |
+| `goal_manager_node` | 두 좌표로 차를 추적하는 Nav2 goal 결정·갱신·정지 |
+| `dummy_obstacle_node` | `webcam/detections`의 `dommy` → PointCloud2 `dummy_cloud` (코스트맵 장애물) |
 
 좌표 계산과 ROS·주행은 파일이 분리돼 있습니다.
 
 | 모듈 | 역할 | ROS 의존 |
 |---|---|---|
 | `homography.py` | 픽셀 → map 변환, 캘리브레이션 | ❌ |
-| `depth_math.py` | RGB↔depth 픽셀 변환, deprojection | ❌ |
+| `depth_math.py` | RGB↔depth 픽셀 변환, deprojection, compressedDepth 디코드 | ❌ |
 | `detections.py` | `Detection3DArray` 조립·매칭 | 메시지만 |
 | `nav_controller.py` | 접근점 계산, Nav2 액션 래퍼 | ✅ |
 
@@ -209,6 +224,7 @@ python3 -m mini_turtle4.goal_manager_node --check   # 놓침 판정 로직
 |---|---|---|
 | `webcam/detections` | `vision_msgs/Detection3DArray` | `map` |
 | `oakd/detections` | `vision_msgs/Detection3DArray` | `map` |
+| `dummy_cloud` | `sensor_msgs/PointCloud2` | `map` |
 
 클래스 이름은 `hypothesis.class_id`에 실립니다. 커스텀 메시지 패키지가 필요 없도록
 표준 타입을 씁니다.
@@ -220,8 +236,9 @@ python3 -m mini_turtle4.goal_manager_node --check   # 놓침 판정 로직
 | 명령 | 용도 |
 |---|---|
 | `ros2 run mini_turtle4 depth_checker` | depth 화면 클릭 → 거리(m) 출력 |
-| `ros2 run mini_turtle4 yolo_node` | OAK-D 탐지 결과를 이미지로 발행 |
+| `ros2 run mini_turtle4 yolo_node` | OAK-D(compressed) 탐지 이미지 발행 + 물체 거리(cm) 로그 |
 | `ros2 run mini_turtle4 cam_sub_node` | RGB 해상도·중앙 depth 로그 |
+| `ros2 topic echo /robot4/dummy_cloud --field width` | 0보다 크면 dummy 마킹 중 |
 
 ---
 
@@ -290,17 +307,17 @@ RGBD로 다시 띄우세요.
   물건 높이만큼 좌표가 밀립니다. 물건이 바닥에 닿는 지점이어야 합니다.
 - **undistort를 안 하는 이유** — 체커보드 캘리브레이션을 하지 않았습니다. 렌즈 왜곡은
   화면 가장자리에서 커지므로, 물건을 화면 중앙 쪽에 두는 것으로 대응합니다.
-- **RGB↔depth 픽셀 변환** — 단순 비율 변환입니다. 실측 확인 결과 RGB 320×320과
-  depth 704×704가 같은 FOV의 정사각형이고 depth가 RGB 프레임에 정렬돼 있어,
-  RGB 중심 (160,160) → (352,352)이 depth 주점 (353.4, 354.1)과 1 px 차이였습니다.
-  카메라 설정을 바꾸면 `depth_checker`로 다시 확인하세요.
-- **거리 게이트 대신 시간 스로틀** — 움직이는 차를 쫓으려면 매 검출마다 goal을 갱신해야
-  합니다. 무한 재전송만 막으면 되므로 거리 임계값이 아니라 `TRACK_RATE`(3 Hz) 시간
-  상한으로 제한합니다. 액션(NavigateToPose)을 다시 부르고 Nav2가 선점하는 방식이라,
-  Nav2 내부 goal_update 토픽이나 별도 behavior tree가 필요 없습니다.
-- **놓치면 유지가 아니라 정지** — OAK-D가 `LOST_TIMEOUT`(1.5 s) 동안 연속으로 차를
-  놓치면 goal을 취소해 멈춥니다. 한 프레임 미검출은 무시하므로(디바운스) YOLO 노이즈나
-  짧은 가림에는 추적이 끊기지 않고, 다시 잡으면 재개합니다.
+- **RGB↔depth 픽셀 변환** — 단순 비율 변환입니다. 현재 파이프라인은 로봇에서 RGB와
+  depth를 **같은 704×704**(HFOV 63.4° 동일)로 맞춰 발행해 픽셀이 1:1로 대응합니다.
+  둘 다 **compressed**(`rgb/image_raw/compressed`, `stereo/.../compressedDepth`)로 받아
+  WiFi 부담을 줄입니다. 카메라 설정을 바꾸면 `depth_checker`로 다시 확인하세요.
+- **차 추적 방식** — goal을 3 Hz로 계속 재전송하며 쫓습니다(TRACK_RATE). 매 프레임 쏘면
+  Nav2가 버벅여서 시간 상한을 뒀습니다. OAK-D가 차를 잡은 뒤로는 웹캠을 무시하고(locked),
+  1.5 초 놓치면 정지 후 재획득 시 재개합니다.
+- **dummy를 코스트맵에 넣는 이유** — RPLIDAR가 못 잡는 장애물이라 YOLO 좌표를
+  PointCloud2로 obstacle 관측원에 흘려 넣습니다. 고정 장애물이라 `clearing:False`로 그
+  세션 동안 유지합니다(디스크 저장 아님 — 재시작하면 웹캠이 다시 봐서 재생성). 설정은
+  [`config/nav2.yaml`](config/nav2.yaml)에 turtlebot4 기본 + `dummy` 소스로 들어 있습니다.
 
 ## 라이선스
 

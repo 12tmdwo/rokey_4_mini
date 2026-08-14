@@ -14,6 +14,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
         ('share/' + package_name + '/scripts', glob('scripts/*.sh')),
+        ('share/' + package_name + '/config', glob('config/*.yaml')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -34,6 +35,8 @@ setup(
             'webcam_locator_node = mini_turtle4.webcam_locator_node:main',
             'oakd_locator_node = mini_turtle4.oakd_locator_node:main',
             'goal_manager_node = mini_turtle4.goal_manager_node:main',
+            'dummy_obstacle_node = mini_turtle4.dummy_obstacle_node:main',
+            'detection_marker_node = mini_turtle4.detection_marker_node:main',
         ],
     },
 )
