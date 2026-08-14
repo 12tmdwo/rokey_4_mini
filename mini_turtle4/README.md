@@ -1,7 +1,7 @@
 # mini_turtle4
 
-맵 밖에 설치한 웹캠으로 물건을 찾아 TurtleBot4를 그 앞까지 보내는 ROS 2 패키지입니다.
-로봇이 가까워지면 자신의 OAK-D로 같은 물건을 다시 재서 목표를 더 정확하게 갱신합니다.
+맵 밖에 설치한 웹캠으로 차를 찾아 TurtleBot4를 그쪽으로 보내고, 로봇의 OAK-D가
+같은 차를 잡으면 그때부터 OAK-D 좌표로 **움직이는 차를 쫓는** ROS 2 패키지입니다.
 
 ```
 웹캠 YOLO ─ 호모그래피 ─→ map 좌표 (대략)  ─┐
@@ -9,11 +9,15 @@
 OAK-D YOLO + depth ────→ map 좌표 (정밀)  ─┘
 ```
 
-1. 웹캠이 물건을 찾아 map 좌표를 냅니다. 로봇에서 가장 가까운 물건이 목표가 됩니다.
-2. 그 좌표 앞 0.5 m 지점으로 Nav2 goal을 보냅니다.
-3. 주행 중 OAK-D가 **같은 클래스**의 물건을 반경 1 m 안에서 잡으면, 더 정확한 좌표로
-   goal을 갱신합니다. Nav2는 멈추지 않고 목표만 바꿉니다(선점).
-4. 너무 가까워져 depth가 무효가 되거나 화면 밖으로 나가면 마지막 goal을 유지합니다.
+차는 하나뿐이라고 가정합니다. `goal_manager`는 세 상태로 움직입니다.
+
+1. **탐색** — 웹캠이 차를 찾아 map 좌표를 냅니다. 로봇에서 가장 가까운 차가 목표가
+   되고, 그 앞 0.5 m 지점으로 Nav2 goal을 보내며 접근합니다.
+2. **추적** — OAK-D가 **같은 차**를 반경 1 m 안에서 처음 잡는 순간부터, OAK-D 좌표로
+   goal을 매번 갱신해 움직이는 차를 쫓습니다. 이때부터 웹캠은 완전히 무시합니다.
+   Nav2는 멈추지 않고 목표만 바꿉니다(선점). 재전송은 3 Hz로 상한을 겁니다.
+3. **정지·재개** — OAK-D가 1.5 s 동안 연속으로 차를 놓치면 goal을 취소해 멈춥니다.
+   한 프레임 미검출은 무시하므로(디바운스), 다시 잡으면 추적을 재개합니다.
 
 > ⚠️ **이 저장소는 특정 환경(사용자 `rokey`, 네임스페이스 `robot4`)에 맞춰져 있습니다.**
 > 다른 곳에서 쓰시려면 아래 [고쳐야 할 값](#고쳐야-할-값)을 먼저 수정하세요.
@@ -40,7 +44,7 @@ ros2 param get /robot4/oakd camera.i_pipeline_type   # RGBD 여야 함
 |---|---|---|
 | `resource/my_map.yaml` + `.pgm` | ✅ | `turtlebot4_navigation/slam.launch.py`로 SLAM 후 저장 |
 | `resource/homography.npy` | ✅ | 아래 [3단계](#3-호모그래피-캘리브레이션)에서 생성 |
-| `~/turtlebot4_ws/best.pt` | ❌ | YOLO 학습 결과 (22 MB). 없으면 `yolov8n.pt`로 대체 가능 |
+| `resource/best.pt` | ❌ | YOLO 학습 결과 (22 MB). `.gitignore`의 `*.pt`로 제외 — 직접 넣으세요 |
 
 > ⚠️ 들어 있는 맵과 호모그래피는 **저희 현장 전용**입니다. 다른 곳·다른 웹캠 위치에서는
 > **에러 없이 좌표만 틀립니다.** 환경이 다르면 아래 준비 단계로 둘 다 새로 만드세요.
@@ -76,7 +80,7 @@ SLAM으로 맵을 만들고 `resource/my_map.yaml`(+ `.pgm`)로 저장합니다.
 필요합니다. **벽 모서리**가 가장 좋습니다.
 
 ```bash
-cd ~/turtlebot4_ws/src/mini_turtle4
+cd ~/turtlebot4_ws/src/rokey_4_mini/mini_turtle4
 python3 -m mini_turtle4.map_point_picker
 ```
 
@@ -92,7 +96,7 @@ python3 -m mini_turtle4.map_point_picker
 ### 3. 호모그래피 캘리브레이션
 
 ```bash
-cd ~/turtlebot4_ws/src/mini_turtle4
+cd ~/turtlebot4_ws/src/rokey_4_mini/mini_turtle4
 python3 -m mini_turtle4.homography
 ```
 
@@ -144,14 +148,15 @@ ros2 launch mini_turtle4 bringup.launch.py namespace:=robot4
 
 | 파일 | 상수 | 현재 값 |
 |---|---|---|
-| [`paths.py`](mini_turtle4/paths.py) | `PKG` | `/home/rokey/turtlebot4_ws/src/mini_turtle4` — 저장소 위치 |
-| | `MODEL` | `/home/rokey/turtlebot4_ws/best.pt` |
+| [`paths.py`](mini_turtle4/paths.py) | `PKG` | `/home/tmdwodl/turtlebot4_ws/src/rokey_4_mini/mini_turtle4` — 저장소 위치 |
+| | `MODEL` | `PKG/resource/best.pt` — `PKG`만 맞으면 따라옵니다 |
 | [`homography.py`](mini_turtle4/homography.py) | `MAP_POINTS` | 현장 실측 4점 — **반드시 교체** |
 | | `CAM_INDEX` | `2` (`ls /dev/video*`로 확인) |
 | [`webcam_locator_node.py`](mini_turtle4/webcam_locator_node.py) | `CONF`, `RATE`, `SHOW` | `0.6`, `5.0 Hz`, `True` |
-| [`goal_manager_node.py`](mini_turtle4/goal_manager_node.py) | `STOP_DIST` | `0.5` — 물체 앞 정지 거리 (m) |
-| | `UPDATE_THRESH` | `0.15` — 이만큼 움직여야 goal 갱신 |
-| | `MATCH_RADIUS` | `1.0` — 같은 물체로 인정할 반경 |
+| [`goal_manager_node.py`](mini_turtle4/goal_manager_node.py) | `STOP_DIST` | `0.5` — 차 앞 정지 거리 (m) |
+| | `MATCH_RADIUS` | `1.0` — 같은 차로 인정할 반경 (m) |
+| | `TRACK_RATE` | `3.0` — 추적 중 goal 재전송 상한 (Hz) |
+| | `LOST_TIMEOUT` | `1.5` — 이만큼 연속으로 놓치면 정지 (s) |
 | [`robot_bringup.launch.py`](launch/robot_bringup.launch.py) | `NAMESPACE` | `/robot4` |
 | [`depth_checker.py`](mini_turtle4/depth_checker.py) | 토픽 2개 | `/robot4/...` |
 
@@ -175,7 +180,7 @@ ros2 launch mini_turtle4 bringup.launch.py namespace:=robot4
 |---|---|
 | `webcam_locator_node` | 웹캠 YOLO → bbox 하단 중앙 → 호모그래피 → `webcam/detections` |
 | `oakd_locator_node` | OAK-D YOLO + depth → TF → `oakd/detections` (주행 안 함) |
-| `goal_manager_node` | 두 좌표를 받아 Nav2 goal 결정·갱신 |
+| `goal_manager_node` | 두 좌표를 받아 차를 쫓음 (탐색→추적→정지·재개), Nav2 goal 관리 |
 
 좌표 계산과 ROS·주행은 파일이 분리돼 있습니다.
 
@@ -186,15 +191,16 @@ ros2 launch mini_turtle4 bringup.launch.py namespace:=robot4
 | `detections.py` | `Detection3DArray` 조립·매칭 | 메시지만 |
 | `nav_controller.py` | 접근점 계산, Nav2 액션 래퍼 | ✅ |
 
-각 모듈은 자체 검사를 갖고 있습니다.
+각 모듈은 자체 검사(self-check)를 갖고 있습니다. 통과하면 `... ok`를 출력합니다.
 
 ```bash
-cd ~/turtlebot4_ws/src/mini_turtle4
-python3 -m mini_turtle4.homography --test
-python3 -m mini_turtle4.depth_math --test
-python3 -m mini_turtle4.detections --test
-python3 -m mini_turtle4.nav_controller --test
-python3 -m mini_turtle4.map_point_picker --test
+cd ~/turtlebot4_ws/src/rokey_4_mini/mini_turtle4
+python3 -m mini_turtle4.depth_math                  # RGB↔depth 변환, deprojection
+python3 -m mini_turtle4.detections                  # Detection3DArray 조립·매칭
+python3 -m mini_turtle4.nav_controller              # 접근점 계산
+python3 -m mini_turtle4.homography --test           # (--test 없으면 캘리브레이션 실행)
+python3 -m mini_turtle4.map_point_picker --test     # (--test 없으면 점 찍기 실행)
+python3 -m mini_turtle4.goal_manager_node --check   # 놓침 판정 로직
 ```
 
 ### 토픽
@@ -227,7 +233,7 @@ Nav2 lifecycle이 `unconfigured`나 `inactive`에 멈춘 것입니다. WiFi + Di
 환경에서는 lifecycle 전환 서비스 응답이 자주 타임아웃 납니다. **코드 문제가 아닙니다.**
 
 ```bash
-./src/mini_turtle4/scripts/nav2_activate.sh robot4
+./src/rokey_4_mini/mini_turtle4/scripts/nav2_activate.sh robot4
 ```
 
 멈춘 노드만 골라 밀어 올립니다. 한 번에 안 되면 다시 실행하세요.
@@ -288,8 +294,13 @@ RGBD로 다시 띄우세요.
   depth 704×704가 같은 FOV의 정사각형이고 depth가 RGB 프레임에 정렬돼 있어,
   RGB 중심 (160,160) → (352,352)이 depth 주점 (353.4, 354.1)과 1 px 차이였습니다.
   카메라 설정을 바꾸면 `depth_checker`로 다시 확인하세요.
-- **goal 갱신 임계값** — 물체 좌표가 15 cm 넘게 움직여야 갱신합니다. 로봇 위치가 아니라
-  **물체 위치**를 기준으로 비교하므로, 로봇이 곡선 주행해도 불필요한 갱신이 안 생깁니다.
+- **거리 게이트 대신 시간 스로틀** — 움직이는 차를 쫓으려면 매 검출마다 goal을 갱신해야
+  합니다. 무한 재전송만 막으면 되므로 거리 임계값이 아니라 `TRACK_RATE`(3 Hz) 시간
+  상한으로 제한합니다. 액션(NavigateToPose)을 다시 부르고 Nav2가 선점하는 방식이라,
+  Nav2 내부 goal_update 토픽이나 별도 behavior tree가 필요 없습니다.
+- **놓치면 유지가 아니라 정지** — OAK-D가 `LOST_TIMEOUT`(1.5 s) 동안 연속으로 차를
+  놓치면 goal을 취소해 멈춥니다. 한 프레임 미검출은 무시하므로(디바운스) YOLO 노이즈나
+  짧은 가림에는 추적이 끊기지 않고, 다시 잡으면 재개합니다.
 
 ## 라이선스
 
