@@ -216,8 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
-# 현장 전용 / 용량 큰 산출물 — README의 "저장소에 없는 파일 3개" 참고
-# (.gitignore는 줄 끝 주석을 지원하지 않으므로 주석은 항상 따로 쓸 것)
+
 
 # YOLO 가중치 (best.pt 21MB)
 *.pt

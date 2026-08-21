@@ -17,16 +17,20 @@ from mini_turtle4.detections import items
 TOPICS = ['webcam/detections', 'oakd/detections']
 OUT = 'detections/markers'
 LIFETIME = 0.5              # s — 이 시간 안 갱신 안 되면 RViz에서 사라짐
+DUMMY_LIFETIME = 1.5        # s — 코스트맵의 dummy 유실 판정과 맞춘다
 SIZE = 0.2                 # m — 구 지름
 COLORS = {'car': (0.0, 1.0, 0.0), 'dommy': (1.0, 0.0, 0.0)}   # 나머지는 흰색
 # ──────────────────────────────────────────────────────
+
+
+def marker_lifetime(cls):
+    return DUMMY_LIFETIME if cls == 'dommy' else LIFETIME
 
 
 class DetectionMarkers(Node):
 
     def __init__(self):
         super().__init__('detection_marker_node')
-        self.life = Duration(seconds=LIFETIME).to_msg()
         self.pub = self.create_publisher(MarkerArray, OUT, 10)
         for t in TOPICS:
             ns = t.split('/')[0]        # webcam / oakd — 소스별 마커 id 분리
@@ -54,7 +58,7 @@ class DetectionMarkers(Node):
         m.pose.orientation.w = 1.0
         r, g, b = COLORS.get(cls, (1.0, 1.0, 1.0))
         m.color.r, m.color.g, m.color.b, m.color.a = r, g, b, 0.9
-        m.lifetime = self.life
+        m.lifetime = Duration(seconds=marker_lifetime(cls)).to_msg()
         return m
 
     def dot(self, header, ns, mid, cls, x, y):
